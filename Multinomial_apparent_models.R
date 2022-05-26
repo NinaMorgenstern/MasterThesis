@@ -39,6 +39,13 @@ library(mcca)
 library(devtools)
 library(mcca)
 
+###############
+###IMPORTANT###
+###############
+# The functions used in this analysis to obtain AUC scores are taken from:
+# https://github.com/benvancalster/IOTA5modelvalidation2020/blob/769c160a8377dd8fcc7df0027f16bab4ba14d089/Functions%20IOTA5.R
+# credits to Jolien Ceusters.
+
 
 ################################
 ####### Data Preparation #######
