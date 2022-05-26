@@ -487,7 +487,7 @@ IECVmm9auc$Performance['AUC']
 ####### Forest plots cEP ##############
 #######################################
 
-#### LR ######
+########### LR #############
 IECVmm1auc$Plot
 IECVmm1auc$Plot[11, "RRauc"] <- "   "
 IECVmm1auc$Plot[12, "RRauc"] <- "   "
@@ -877,7 +877,7 @@ for (i in 1:8){
 fit.RE_2 = rma.uni(PDI_mm1$PDI, sei = PDI_mm1$PooledSE, method = 'REML')
 
 
-############### Ridge #####################
+############### Ridge LR #####################
 mm1_predapp<-read.csv("predictions/pred_multinomial_Ridge.csv")[ ,2:4]
 mydata<-cbind(mydata, mm1_predapp)
 PDI_mm1 <- matrix(ncol = 4, nrow = 0)
