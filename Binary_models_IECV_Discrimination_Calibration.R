@@ -894,3 +894,891 @@ sum(performance_9[["CenterPer"]][["TN"]])/ sum(performance_9[["CenterPer"]][["TN
 #percent high risk
 sum(performance_9[["CenterPer"]][["TP"]]+ performance_9[["CenterPer"]][["FP"]])/ 2894
 
+
+
+
+
+##################################################################
+#######################CALIBRATION ###############################
+##################################################################
+
+mydata$Center <- factor(mydata$Centre, labels=c("Chelsea and Westminster", "Hillingdon", "North Middlesex", "Queen Charlotte's and Chelsea", "Royal Surrey", "St. Marys", "West Middlesex", "Wexham Park"))
+center <- c("Chelsea and Westminster", "Hillingdon", "North Middlesex", "Queen Charlotte's and Chelsea", "Royal Surrey", "St. Marys", "West Middlesex", "Wexham Park")
+
+IncludedCenters <- unique(mydata$Center)
+#selecting line types, colors and width
+lty.centers <- c(1,1,1,1,1,1,1,1)
+col.centers <- c("#d42942", "#f79a7d", "#feac5e", "#fee292", "#e6f698", "#a7db9e", "#68c3a5", "#5198c5")
+lwd.centers <- c(2,1,2,1,2,1,2,1)
+
+
+# 1. Logistic Regression
+# need to take care of 0,1 probabilities
+mydata$prediction_1[mydata$prediction_1 == 0] <- 0.001
+mydata$prediction_1[mydata$prediction_1 == 1] <- 0.999
+mydata$LP_m1 <- logit(mydata$prediction_1)
+slopem1 <- glmer(Outcome2 ~ LP_m1 + (1+LP_m1 | Center), data = mydata, family = "binomial", control = glmerControl(optimizer = "bobyqa"))
+summary(slopem1)
+coef(slopem1)
+ranef(slopem1)
+slopecoefm1 <- coef(slopem1)
+slopecoefm1 <- data.frame(matrix(unlist(slopecoefm1), nrow=8, byrow=FALSE),stringsAsFactors=FALSE)
+slopecoefsem1<- standard_error(slopem1, effects="random")
+slopecoefsem1 <- data.frame(matrix(unlist(slopecoefsem1), nrow=8, byrow=FALSE),stringsAsFactors=FALSE)
+
+m1slopes <- matrix(ncol=3, nrow=length(center))
+colnames(m1slopes) <- c("Center", "slope", "se" )
+m1slopes <- data.frame(m1slopes)
+m1slopes$Center <- center
+m1slopes$slope <-as.numeric(slopecoefm1$X2)
+m1slopes$se <- as.numeric(slopecoefsem1$X2)
+slopemam1 <- rma.uni(m1slopes$slope, sei=m1slopes$se, method="REML")
+slopemam1
+
+#intercept
+m1slopesinter <- matrix(ncol=3, nrow=length(center))
+colnames(m1slopesinter) <- c("Center", "intercept", "se" )
+m1slopesinter <- data.frame(m1slopesinter)
+m1slopesinter$Center <- center
+m1slopesinter$intercept <-as.numeric(slopecoefm1$X1)
+m1slopesinter$se <- as.numeric(slopecoefsem1$X1)
+slopeintermam1 <- rma.uni(m1slopesinter$intercept, sei=m1slopesinter$se, method="REML")
+slopeintermam1
+
+dataplotm1 <- data.frame(LP_m1 = seq(min(mydata$LP_m1), max(mydata$LP_m1), length = 500))
+
+newdatam1 <- data.frame(LP_m1 = rep(dataplotm1$LP_m1, length(IncludedCenters)), 
+                        Center = sort(rep(IncludedCenters, 500)))
+
+obsm1 <- predict(slopem1, newdata = newdatam1, re.form = ~(LP_m1 |Center), allow.new.levels = T, type = "response")
+resultm1 <- cbind.data.frame(x = inv.logit(newdatam1$LP_m1), y = obsm1,center = newdatam1$Center)
+resultm1 <- split(resultm1, resultm1$center)
+
+# ploting
+tiff("Binary_LR_IECV_calibration.tiff", width = 13, height = 13, units = "cm", res = 300)
+par(mar = c(5.1,4.1,4.1,9), xpd=FALSE, pty = 's')
+plot(0, 0, xlim = c(0, 1), ylim = c(0, 1), xlab = "Estimated risk", 
+     ylab = "Observed proportion", type = "n")
+clip(0, 1, 0, 1)
+abline(0, 1, lty = 1, col = "black", lwd = 1.75)
+for (i in IncludedCenters) lines(resultm1[[i]], col = col.centers[which(IncludedCenters == i)], lty = lty.centers[which(IncludedCenters == i)], 
+                                 lwd = lwd.centers[which(IncludedCenters == i)])
+
+legend("topright", c("Ideal",as.character(IncludedCenters)) , lty = c(1, lty.centers), cex = 0.6,bty = "n", lwd = c(1.75, lwd.centers), 
+       col = c("black", col.centers),  inset = c(-0.7, -0.05),  xpd=NA)
+title(main="Binary LR: Calibration per Center", line =3, cex.main=0.95)
+dev.off()
+
+#Random intercept
+interceptm1 = glmer(Outcome2 ~ 1 + (1 | Center), data = mydata, family = "binomial", 
+                    offset = LP_m1, control = glmerControl(optimizer = "bobyqa"))
+summary(interceptm1)
+coef(interceptm1)
+
+m1interc <- matrix(ncol=3, nrow=length(center))
+colnames(m1interc) <- c("Center", "intercept", "se" )
+m1interc <- data.frame(m1interc)
+m1interc$Center <- center
+
+intercm1 <- coef(interceptm1)
+intercm1 <- data.frame(unlist(intercm1), nrow=8, byrow=TRUE,stringsAsFactors=FALSE)
+
+intercm1se <- standard_error(interceptm1, effects="random")
+intercm1se <-data.frame(unlist(intercm1se), nrow=8, byrow=TRUE,stringsAsFactors=FALSE)
+
+m1interc$intercept <-as.numeric(intercm1$unlist.intercm1.)
+m1interc$se <- as.numeric(intercm1se$unlist.intercm1se.)
+
+intercmam1 <- rma.uni(m1interc$intercept, sei=m1interc$se, method="REML")
+intercmam1
+
+
+
+# 2. Logistic Regression with transformations
+mydata$prediction_2[mydata$prediction_2 == 0] <- 0.001
+mydata$prediction_2[mydata$prediction_2 == 1] <- 0.999
+mydata$LP_m2 <- logit(mydata$prediction_2)
+
+slopem2 <- glmer(Outcome2 ~ LP_m2 + (1+LP_m2 | Center), data = mydata, family = "binomial", control = glmerControl(optimizer = "bobyqa"))
+summary(slopem2)
+coef(slopem2)
+ranef(slopem2)
+slopecoefm2 <- coef(slopem2)
+slopecoefm2 <- data.frame(matrix(unlist(slopecoefm2), nrow=8, byrow=FALSE),stringsAsFactors=FALSE)
+slopecoefsem2<- standard_error(slopem2, effects="random")
+slopecoefsem2 <- data.frame(matrix(unlist(slopecoefsem2), nrow=8, byrow=FALSE),stringsAsFactors=FALSE)
+
+m2slopes <- matrix(ncol=3, nrow=length(center))
+colnames(m2slopes) <- c("Center", "slope", "se" )
+m2slopes <- data.frame(m2slopes)
+m2slopes$Center <- center
+m2slopes$slope <-as.numeric(slopecoefm2$X2)
+m2slopes$se <- as.numeric(slopecoefsem2$X2)
+slopemam2 <- rma.uni(m2slopes$slope, sei=m2slopes$se, method="REML")
+slopemam2
+
+#intercept
+m2slopesinter <- matrix(ncol=3, nrow=length(center))
+colnames(m2slopesinter) <- c("Center", "intercept", "se" )
+m2slopesinter <- data.frame(m2slopesinter)
+m2slopesinter$Center <- center
+m2slopesinter$intercept <-as.numeric(slopecoefm2$X1)
+m2slopesinter$se <- as.numeric(slopecoefsem2$X1)
+slopeintermam2 <- rma.uni(m2slopesinter$intercept, sei=m2slopesinter$se, method="REML")
+slopeintermam2
+
+dataplotm2 <- data.frame(LP_m2 = seq(min(mydata$LP_m2), max(mydata$LP_m2), length = 500))
+
+newdatam2 <- data.frame(LP_m2 = rep(dataplotm2$LP_m2, length(IncludedCenters)), 
+                        Center = sort(rep(IncludedCenters, 500)))
+
+obsm2 <- predict(slopem2, newdata = newdatam2, re.form = ~(LP_m2 |Center), allow.new.levels = T, type = "response")
+resultm2 <- cbind.data.frame(x = inv.logit(newdatam2$LP_m2), y = obsm2,center = newdatam2$Center)
+resultm2 <- split(resultm2, resultm2$center)
+
+#plot
+tiff("Binary_LR_withTransformations_IECV_calibration.tiff", width = 13, height = 13, units = "cm", res = 300)
+par(mar = c(5.1,4.1,4.1,9), xpd=FALSE, pty = 's')
+plot(0, 0, xlim = c(0, 1), ylim = c(0, 1), xlab = "Estimated risk", 
+     ylab = "Observed proportion", type = "n")
+clip(0, 1, 0, 1)
+abline(0, 1, lty = 1, col = "black", lwd = 1.75)
+
+for (i in IncludedCenters) lines(resultm2[[i]], col = col.centers[which(IncludedCenters == i)], lty = lty.centers[which(IncludedCenters == i)], 
+                                 lwd = lwd.centers[which(IncludedCenters == i)])
+
+legend("topright", c("Ideal",as.character(IncludedCenters)) , lty = c(1, lty.centers), cex = 0.6,bty = "n", lwd = c(1.75, lwd.centers), 
+       col = c("black", col.centers),  inset = c(-0.7, -0.05),  xpd=NA)
+title(main="Binary LR with Transformations: Calibration per Center", line =3, cex.main=0.95)
+dev.off()
+
+#Random intercept
+interceptm2 = glmer(Outcome2 ~ 1 + (1 | Center), data = mydata, family = "binomial", 
+                    offset = LP_m2, control = glmerControl(optimizer = "bobyqa"))
+summary(interceptm2)
+coef(interceptm2)
+
+m2interc <- matrix(ncol=3, nrow=length(center))
+colnames(m2interc) <- c("Center", "intercept", "se" )
+m2interc <- data.frame(m2interc)
+m2interc$Center <- center
+
+intercm2 <- coef(interceptm2)
+intercm2 <- data.frame(unlist(intercm2), nrow=8, byrow=TRUE,stringsAsFactors=FALSE)
+
+intercm2se <- standard_error(interceptm2, effects="random")
+intercm2se <-data.frame(unlist(intercm2se), nrow=8, byrow=TRUE,stringsAsFactors=FALSE)
+
+m2interc$intercept <-as.numeric(intercm2$unlist.intercm2.)
+m2interc$se <- as.numeric(intercm2se$unlist.intercm2se.)
+
+intercmam2 <- rma.uni(m2interc$intercept, sei=m2interc$se, method="REML")
+intercmam2
+
+
+# 3. Ridge logistic Regression
+mydata$prediction_3[mydata$prediction_3 == 0] <- 0.001
+mydata$prediction_3[mydata$prediction_3 == 1] <- 0.999
+mydata$LP_m3 <- logit(mydata$prediction_3)
+
+slopem3 <- glmer(Outcome2 ~ LP_m3 + (1+LP_m3 | Center), data = mydata, family = "binomial", control = glmerControl(optimizer = "bobyqa"))
+summary(slopem3)
+coef(slopem3)
+ranef(slopem3)
+
+slopecoefm3 <- coef(slopem3)
+slopecoefm3 <- data.frame(matrix(unlist(slopecoefm3), nrow=8, byrow=FALSE),stringsAsFactors=FALSE)
+slopecoefsem3<- standard_error(slopem3, effects="random")
+slopecoefsem3 <- data.frame(matrix(unlist(slopecoefsem3), nrow=8, byrow=FALSE),stringsAsFactors=FALSE)
+
+m3slopes <- matrix(ncol=3, nrow=length(center))
+colnames(m3slopes) <- c("Center", "slope", "se" )
+m3slopes <- data.frame(m3slopes)
+m3slopes$Center <- center
+m3slopes$slope <-as.numeric(slopecoefm3$X2)
+m3slopes$se <- as.numeric(slopecoefsem3$X2)
+slopemam3 <- rma.uni(m3slopes$slope, sei=m3slopes$se, method="REML")
+slopemam3
+
+#intercept
+m3slopesinter <- matrix(ncol=3, nrow=length(center))
+colnames(m3slopesinter) <- c("Center", "intercept", "se" )
+m3slopesinter <- data.frame(m3slopesinter)
+m3slopesinter$Center <- center
+m3slopesinter$intercept <-as.numeric(slopecoefm3$X1)
+m3slopesinter$se <- as.numeric(slopecoefsem3$X1)
+slopeintermam3 <- rma.uni(m3slopesinter$intercept, sei=m3slopesinter$se, method="REML")
+slopeintermam3
+
+dataplotm3 <- data.frame(LP_m3 = seq(min(mydata$LP_m3), max(mydata$LP_m3), length = 500))
+
+newdatam3 <- data.frame(LP_m3 = rep(dataplotm3$LP_m3, length(IncludedCenters)), 
+                        Center = sort(rep(IncludedCenters, 500)))
+
+obsm3 <- predict(slopem3, newdata = newdatam3, re.form = ~(LP_m3 |Center), allow.new.levels = T, type = "response")
+resultm3 <- cbind.data.frame(x = inv.logit(newdatam3$LP_m3), y = obsm3, center = newdatam3$Center)
+resultm3 <- split(resultm3, resultm3$center)
+
+tiff("Binary_Ridge_IECV_calibration.tiff", width = 13, height = 13, units = "cm", res = 300)
+par(mar = c(5.1,4.1,4.1,9), xpd=FALSE, pty = 's')
+plot(0, 0, xlim = c(0, 1), ylim = c(0, 1), xlab = "Estimated risk", 
+     ylab = "Observed proportion", type = "n")
+clip(0, 1, 0, 1)
+abline(0, 1, lty = 1, col = "black", lwd = 1.75)
+
+for (i in IncludedCenters) lines(resultm3[[i]], col = col.centers[which(IncludedCenters == i)], lty = lty.centers[which(IncludedCenters == i)], 
+                                 lwd = lwd.centers[which(IncludedCenters == i)])
+
+legend("topright", c("Ideal",as.character(IncludedCenters)) , lty = c(1, lty.centers), cex = 0.6,bty = "n", lwd = c(1.75, lwd.centers), 
+       col = c("black", col.centers),  inset = c(-0.7, -0.05),  xpd=NA)
+title(main="Binary Ridge Regression: Calibration per Center", line =3, cex.main=0.95)
+dev.off()
+
+#Random intercept
+interceptm3 = glmer(Outcome2 ~ 1 + (1 | Center), data = mydata, family = "binomial", 
+                    offset = LP_m3, control = glmerControl(optimizer = "bobyqa"))
+summary(interceptm3)
+coef(interceptm3)
+
+m3interc <- matrix(ncol=3, nrow=length(center))
+colnames(m3interc) <- c("Center", "intercept", "se" )
+m3interc <- data.frame(m3interc)
+m3interc$Center <- center
+
+intercm3 <- coef(interceptm3)
+intercm3 <- data.frame(unlist(intercm3), nrow=8, byrow=TRUE,stringsAsFactors=FALSE)
+
+intercm3se <- standard_error(interceptm3, effects="random")
+intercm3se <-data.frame(unlist(intercm3se), nrow=8, byrow=TRUE,stringsAsFactors=FALSE)
+
+m3interc$intercept <-as.numeric(intercm3$unlist.intercm3.)
+m3interc$se <- as.numeric(intercm3se$unlist.intercm3se.)
+
+intercmam3 <- rma.uni(m3interc$intercept, sei=m3interc$se, method="REML")
+intercmam3
+
+
+
+# 4. Firth logistic Regression
+mydata$prediction_4[mydata$prediction_4 == 0] <- 0.001
+mydata$prediction_4[mydata$prediction_4 == 1] <- 0.999
+mydata$LP_m4 <- logit(mydata$prediction_4)
+
+slopem4 <- glmer(Outcome2 ~ LP_m4 + (1+LP_m4 | Center), data = mydata, family = "binomial", control = glmerControl(optimizer = "bobyqa"))
+summary(slopem4)
+coef(slopem4)
+ranef(slopem4)
+slopecoefm4 <- coef(slopem4)
+slopecoefm4 <- data.frame(matrix(unlist(slopecoefm4), nrow=8, byrow=FALSE),stringsAsFactors=FALSE)
+slopecoefsem4<- standard_error(slopem4, effects="random")
+slopecoefsem4 <- data.frame(matrix(unlist(slopecoefsem4), nrow=8, byrow=FALSE),stringsAsFactors=FALSE)
+
+
+m4slopes <- matrix(ncol=3, nrow=length(center))
+colnames(m4slopes) <- c("Center", "slope", "se" )
+m4slopes <- data.frame(m4slopes)
+m4slopes$Center <- center
+m4slopes$slope <-as.numeric(slopecoefm4$X2)
+m4slopes$se <- as.numeric(slopecoefsem4$X2)
+slopemam4 <- rma.uni(m4slopes$slope, sei=m4slopes$se, method="REML")
+slopemam4
+
+#intercept
+m4slopesinter <- matrix(ncol=3, nrow=length(center))
+colnames(m4slopesinter) <- c("Center", "intercept", "se" )
+m4slopesinter <- data.frame(m4slopesinter)
+m4slopesinter$Center <- center
+m4slopesinter$intercept <-as.numeric(slopecoefm4$X1)
+m4slopesinter$se <- as.numeric(slopecoefsem4$X1)
+slopeintermam4 <- rma.uni(m4slopesinter$intercept, sei=m4slopesinter$se, method="REML")
+slopeintermam4
+
+dataplotm4 <- data.frame(LP_m4 = seq(min(mydata$LP_m4), max(mydata$LP_m4), length = 500))
+
+newdatam4 <- data.frame(LP_m4 = rep(dataplotm4$LP_m4, length(IncludedCenters)), 
+                        Center = sort(rep(IncludedCenters, 500)))
+
+obsm4 <- predict(slopem4, newdata = newdatam4, re.form = ~(LP_m4 |Center), allow.new.levels = T, type = "response")
+resultm4 <- cbind.data.frame(x = inv.logit(newdatam4$LP_m4), y = obsm4,center = newdatam4$Center)
+resultm4 <- split(resultm4, resultm4$center)
+
+tiff("Binary_Firth_IECV_calibration.tiff", width = 13, height = 13, units = "cm", res = 300)
+par(mar = c(5.1,4.1,4.1,9), xpd=FALSE, pty = 's')
+plot(0, 0, xlim = c(0, 1), ylim = c(0, 1), xlab = "Estimated risk", 
+     ylab = "Observed proportion", type = "n")
+clip(0, 1, 0, 1)
+abline(0, 1, lty = 1, col = "black", lwd = 1.75)
+
+for (i in IncludedCenters) lines(resultm4[[i]], col = col.centers[which(IncludedCenters == i)], lty = lty.centers[which(IncludedCenters == i)], 
+                                 lwd = lwd.centers[which(IncludedCenters == i)])
+
+legend("topright", c("Ideal",as.character(IncludedCenters)) , lty = c(1, lty.centers), cex = 0.6,bty = "n", lwd = c(1.75, lwd.centers), 
+       col = c("black", col.centers),  inset = c(-0.7, -0.05),  xpd=NA)
+title(main="Binary Firth LR: Calibration per Center", line =3, cex.main=0.95)
+dev.off()
+
+#Random intercept
+interceptm4 = glmer(Outcome2 ~ 1 + (1 | Center), data = mydata, family = "binomial", 
+                    offset = LP_m4, control = glmerControl(optimizer = "bobyqa"))
+summary(interceptm4)
+coef(interceptm4)
+
+m4interc <- matrix(ncol=3, nrow=length(center))
+colnames(m4interc) <- c("Center", "intercept", "se" )
+m4interc <- data.frame(m4interc)
+m4interc$Center <- center
+
+intercm4 <- coef(interceptm4)
+intercm4 <- data.frame(unlist(intercm4), nrow=8, byrow=TRUE,stringsAsFactors=FALSE)
+
+intercm4se <- standard_error(interceptm4, effects="random")
+intercm4se <-data.frame(unlist(intercm4se), nrow=8, byrow=TRUE,stringsAsFactors=FALSE)
+
+m4interc$intercept <-as.numeric(intercm4$unlist.intercm4.)
+m4interc$se <- as.numeric(intercm4se$unlist.intercm4se.)
+
+intercmam4 <- rma.uni(m4interc$intercept, sei=m4interc$se, method="REML")
+intercmam4
+
+
+
+# 5. CART
+mydata$prediction_5[mydata$prediction_5 == 0] <- 0.001
+mydata$prediction_5[mydata$prediction_5 == 1] <- 0.999
+mydata$LP_m5 <- logit(mydata$prediction_5)
+
+slopem5 <- glmer(Outcome2 ~ LP_m5 + (1+LP_m5 | Center), data = mydata, family = "binomial")
+summary(slopem5)
+coef(slopem5)
+ranef(slopem5)
+
+slopecoefm5 <- coef(slopem5)
+slopecoefm5 <- data.frame(matrix(unlist(slopecoefm5), nrow=8, byrow=FALSE),stringsAsFactors=FALSE)
+slopecoefsem5<- standard_error(slopem5, effects="random")
+slopecoefsem5 <- data.frame(matrix(unlist(slopecoefsem5), nrow=8, byrow=FALSE),stringsAsFactors=FALSE)
+
+m5slopes <- matrix(ncol=3, nrow=length(center))
+colnames(m5slopes) <- c("Center", "slope", "se" )
+m5slopes <- data.frame(m5slopes)
+m5slopes$Center <- center
+m5slopes$slope <-as.numeric(slopecoefm5$X2)
+m5slopes$se <- as.numeric(slopecoefsem5$X2)
+slopemam5 <- rma.uni(m5slopes$slope, sei=m5slopes$se, method="REML")
+slopemam5
+
+#intercept
+m5slopesinter <- matrix(ncol=3, nrow=length(center))
+colnames(m5slopesinter) <- c("Center", "intercept", "se" )
+m5slopesinter <- data.frame(m5slopesinter)
+m5slopesinter$Center <- center
+m5slopesinter$intercept <-as.numeric(slopecoefm5$X1)
+m5slopesinter$se <- as.numeric(slopecoefsem5$X1)
+slopeintermam5 <- rma.uni(m5slopesinter$intercept, sei=m5slopesinter$se, method="REML")
+slopeintermam5
+
+dataplotm5 <- data.frame(LP_m5 = seq(min(mydata$LP_m5, na.rm=T), max(mydata$LP_m5, na.rm=T), length = 500))
+
+newdatam5 <- data.frame(LP_m5 = rep(dataplotm5$LP_m5, length(IncludedCenters)), 
+                        Center = sort(rep(IncludedCenters, 500)))
+
+obsm5 <- predict(slopem5, newdata = newdatam5, re.form = ~(LP_m5 |Center), allow.new.levels = T, type = "response")
+resultm5 <- cbind.data.frame(x = inv.logit(newdatam5$LP_m5), y = obsm5,center = newdatam5$Center)
+resultm5 <- split(resultm5, resultm5$center)
+
+tiff("Binary_CART_IECV_calibration.tiff", width = 13, height = 13, units = "cm", res = 300)
+par(mar = c(5.1,4.1,4.1,9), xpd=FALSE, pty = 's')
+plot(0, 0, xlim = c(0, 1), ylim = c(0, 1), xlab = "Estimated risk", 
+     ylab = "Observed proportion", type = "n")
+clip(0, 1, 0, 1)
+abline(0, 1, lty = 1, col = "black", lwd = 1.75)
+
+for (i in IncludedCenters) lines(resultm5[[i]], col = col.centers[which(IncludedCenters == i)], lty = lty.centers[which(IncludedCenters == i)], 
+                                 lwd = lwd.centers[which(IncludedCenters == i)])
+
+legend("topright", c("Ideal",as.character(IncludedCenters)) , lty = c(1, lty.centers), cex = 0.6,bty = "n", lwd = c(1.75, lwd.centers), 
+       col = c("black", col.centers),  inset = c(-0.7, -0.05),  xpd=NA)
+title(main="Binary CART: Calibration per Center", line =3, cex.main=0.95)
+dev.off()
+
+#Random intercept
+interceptm5 = glmer(Outcome2 ~ 1 + (1 | Center), data = mydata, family = "binomial", 
+                    offset = LP_m5, control = glmerControl(optimizer = "bobyqa"))
+summary(interceptm5)
+coef(interceptm5)
+
+m5interc <- matrix(ncol=3, nrow=length(center))
+colnames(m5interc) <- c("Center", "intercept", "se" )
+m5interc <- data.frame(m5interc)
+m5interc$Center <- center
+
+intercm5 <- coef(interceptm5)
+intercm5 <- data.frame(unlist(intercm5), nrow=8, byrow=TRUE,stringsAsFactors=FALSE)
+
+intercm5se <- standard_error(interceptm5, effects="random")
+intercm5se <-data.frame(unlist(intercm5se), nrow=8, byrow=TRUE,stringsAsFactors=FALSE)
+
+m5interc$intercept <-as.numeric(intercm5$unlist.intercm5.)
+m5interc$se <- as.numeric(intercm5se$unlist.intercm5se.)
+
+intercmam5 <- rma.uni(m5interc$intercept, sei=m5interc$se, method="REML")
+intercmam5
+
+
+
+# 6. Random Forest
+mydata$prediction_6[mydata$prediction_6 == 0] <- 0.001
+mydata$prediction_6[mydata$prediction_6 == 1] <- 0.999
+mydata$LP_m6 <- logit(mydata$prediction_6)
+
+slopem6 <- glmer(Outcome2 ~ LP_m6 + (1+LP_m6 | Center), data = mydata, family = "binomial")
+summary(slopem6)
+coef(slopem6)
+ranef(slopem6)
+slopecoefm6 <- coef(slopem6)
+slopecoefm6 <- data.frame(matrix(unlist(slopecoefm6), nrow=8, byrow=FALSE),stringsAsFactors=FALSE)
+slopecoefsem6<- standard_error(slopem6, effects="random")
+slopecoefsem6 <- data.frame(matrix(unlist(slopecoefsem6), nrow=8, byrow=FALSE),stringsAsFactors=FALSE)
+
+
+m6slopes <- matrix(ncol=3, nrow=length(center))
+colnames(m6slopes) <- c("Center", "slope", "se" )
+m6slopes <- data.frame(m6slopes)
+m6slopes$Center <- center
+m6slopes$slope <-as.numeric(slopecoefm6$X2)
+m6slopes$se <- as.numeric(slopecoefsem6$X2)
+slopemam6 <- rma.uni(m6slopes$slope, sei=m6slopes$se, method="REML")
+slopemam6
+
+#intercept
+m6slopesinter <- matrix(ncol=3, nrow=length(center))
+colnames(m6slopesinter) <- c("Center", "intercept", "se" )
+m6slopesinter <- data.frame(m6slopesinter)
+m6slopesinter$Center <- center
+m6slopesinter$intercept <-as.numeric(slopecoefm6$X1)
+m6slopesinter$se <- as.numeric(slopecoefsem6$X1)
+slopeintermam6 <- rma.uni(m6slopesinter$intercept, sei=m6slopesinter$se, method="REML")
+slopeintermam6
+
+dataplotm6 <- data.frame(LP_m6 = seq(min(mydata$LP_m6, na.rm=T), max(mydata$LP_m6, na.rm=T), length = 500))
+
+newdatam6 <- data.frame(LP_m6 = rep(dataplotm6$LP_m6, length(IncludedCenters)), 
+                        Center = sort(rep(IncludedCenters, 500)))
+
+obsm6 <- predict(slopem6, newdata = newdatam6, re.form = ~(LP_m6 |Center), allow.new.levels = T, type = "response")
+resultm6 <- cbind.data.frame(x = inv.logit(newdatam6$LP_m6), y = obsm6,center = newdatam6$Center)
+resultm6 <- split(resultm6, resultm6$center)
+
+tiff("Binary_RF_IECV_calibration.tiff", width = 13, height = 13, units = "cm", res = 300)
+par(mar = c(5.1,4.1,4.1,9), xpd=FALSE, pty = 's')
+plot(0, 0, xlim = c(0, 1), ylim = c(0, 1), xlab = "Estimated risk", 
+     ylab = "Observed proportion", type = "n")
+clip(0, 1, 0, 1)
+abline(0, 1, lty = 1, col = "black", lwd = 1.75)
+
+for (i in IncludedCenters) lines(resultm6[[i]], col = col.centers[which(IncludedCenters == i)], lty = lty.centers[which(IncludedCenters == i)], 
+                                 lwd = lwd.centers[which(IncludedCenters == i)])
+
+legend("topright", c("Ideal",as.character(IncludedCenters)) , lty = c(1, lty.centers), cex = 0.6,bty = "n", lwd = c(1.75, lwd.centers), 
+       col = c("black", col.centers),  inset = c(-0.7, -0.05),  xpd=NA)
+title(main="Binary RF: Calibration per Center", line =3, cex.main=0.95)
+dev.off()
+
+#Random intercept
+interceptm6 = glmer(Outcome2 ~ 1 + (1 | Center), data = mydata, family = "binomial", 
+                    offset = LP_m6, control = glmerControl(optimizer = "bobyqa"))
+summary(interceptm6)
+coef(interceptm6)
+
+m6interc <- matrix(ncol=3, nrow=length(center))
+colnames(m6interc) <- c("Center", "intercept", "se" )
+m6interc <- data.frame(m6interc)
+m6interc$Center <- center
+
+intercm6 <- coef(interceptm6)
+intercm6 <- data.frame(unlist(intercm6), nrow=8, byrow=TRUE,stringsAsFactors=FALSE)
+
+intercm6se <- standard_error(interceptm6, effects="random")
+intercm6se <-data.frame(unlist(intercm6se), nrow=8, byrow=TRUE,stringsAsFactors=FALSE)
+
+m6interc$intercept <-as.numeric(intercm6$unlist.intercm6.)
+m6interc$se <- as.numeric(intercm6se$unlist.intercm6se.)
+
+intercmam6 <- rma.uni(m6interc$intercept, sei=m6interc$se, method="REML")
+intercmam6
+
+
+
+
+# 7. XGBoost
+mydata$prediction_7[mydata$prediction_7 == 0] <- 0.001
+mydata$prediction_7[mydata$prediction_7 == 1] <- 0.999
+mydata$LP_m7 <- logit(mydata$prediction_7)
+
+slopem7 <- glmer(Outcome2 ~ LP_m7 + (1+LP_m7 | Center), data = mydata, family = "binomial")
+summary(slopem7)
+coef(slopem7)
+ranef(slopem7)
+
+slopecoefm7 <- coef(slopem7)
+slopecoefm7 <- data.frame(matrix(unlist(slopecoefm7), nrow=8, byrow=FALSE),stringsAsFactors=FALSE)
+slopecoefsem7<- standard_error(slopem7, effects="random")
+slopecoefsem7 <- data.frame(matrix(unlist(slopecoefsem7), nrow=8, byrow=FALSE),stringsAsFactors=FALSE)
+
+m7slopes <- matrix(ncol=3, nrow=length(center))
+colnames(m7slopes) <- c("Center", "slope", "se" )
+m7slopes <- data.frame(m7slopes)
+m7slopes$Center <- center
+m7slopes$slope <-as.numeric(slopecoefm7$X2)
+m7slopes$se <- as.numeric(slopecoefsem7$X2)
+slopemam7 <- rma.uni(m7slopes$slope, sei=m7slopes$se, method="REML")
+slopemam7
+
+#intercept
+m7slopesinter <- matrix(ncol=3, nrow=length(center))
+colnames(m7slopesinter) <- c("Center", "intercept", "se" )
+m7slopesinter <- data.frame(m7slopesinter)
+m7slopesinter$Center <- center
+m7slopesinter$intercept <-as.numeric(slopecoefm7$X1)
+m7slopesinter$se <- as.numeric(slopecoefsem7$X1)
+slopeintermam7 <- rma.uni(m7slopesinter$intercept, sei=m7slopesinter$se, method="REML")
+slopeintermam7
+
+dataplotm7 <- data.frame(LP_m7 = seq(min(mydata$LP_m7, na.rm=T), max(mydata$LP_m7, na.rm=T), length = 500))
+
+newdatam7 <- data.frame(LP_m7 = rep(dataplotm7$LP_m7, length(IncludedCenters)), 
+                        Center = sort(rep(IncludedCenters, 500)))
+
+obsm7 <- predict(slopem7, newdata = newdatam7, re.form = ~(LP_m7 |Center), allow.new.levels = T, type = "response")
+resultm7 <- cbind.data.frame(x = inv.logit(newdatam7$LP_m7), y = obsm7,center = newdatam7$Center)
+resultm7 <- split(resultm7, resultm7$center)
+
+tiff("Binary_XGB_IECV_calibration.tiff", width = 13, height = 13, units = "cm", res = 300)
+par(mar = c(5.1,4.1,4.1,9), xpd=FALSE, pty = 's')
+plot(0, 0, xlim = c(0, 1), ylim = c(0, 1), xlab = "Estimated risk", 
+     ylab = "Observed proportion", type = "n")
+clip(0, 1, 0, 1)
+abline(0, 1, lty = 1, col = "black", lwd = 1.75)
+
+for (i in IncludedCenters) lines(resultm7[[i]], col = col.centers[which(IncludedCenters == i)], lty = lty.centers[which(IncludedCenters == i)], 
+                                 lwd = lwd.centers[which(IncludedCenters == i)])
+
+legend("topright", c("Ideal",as.character(IncludedCenters)) , lty = c(1, lty.centers), cex = 0.6,bty = "n", lwd = c(1.75, lwd.centers), 
+       col = c("black", col.centers),  inset = c(-0.7, -0.05),  xpd=NA)
+title(main="Binary XGB: Calibration per Center", line =3, cex.main=0.95)
+dev.off()
+
+#Random intercept
+interceptm7 = glmer(Outcome2 ~ 1 + (1 | Center), data = mydata, family = "binomial", 
+                    offset = LP_m7, control = glmerControl(optimizer = "bobyqa"))
+summary(interceptm7)
+coef(interceptm7)
+
+m7interc <- matrix(ncol=3, nrow=length(center))
+colnames(m7interc) <- c("Center", "intercept", "se" )
+m7interc <- data.frame(m7interc)
+m7interc$Center <- center
+
+intercm7 <- coef(interceptm7)
+intercm7 <- data.frame(unlist(intercm7), nrow=8, byrow=TRUE,stringsAsFactors=FALSE)
+
+intercm7se <- standard_error(interceptm7, effects="random")
+intercm7se <-data.frame(unlist(intercm7se), nrow=8, byrow=TRUE,stringsAsFactors=FALSE)
+
+m7interc$intercept <-as.numeric(intercm7$unlist.intercm7.)
+m7interc$se <- as.numeric(intercm7se$unlist.intercm7se.)
+
+intercmam7 <- rma.uni(m7interc$intercept, sei=m7interc$se, method="REML")
+intercmam7
+
+
+
+# 8. SVM
+mydata$prediction_8[mydata$prediction_8 == 0] <- 0.001
+mydata$prediction_8[mydata$prediction_8 == 1] <- 0.999
+mydata$LP_m8 <- logit(mydata$prediction_8)
+
+slopem8 <- glmer(Outcome2 ~ LP_m8 + (1+LP_m8 | Center), data = mydata, family = "binomial")
+summary(slopem8)
+coef(slopem8)
+ranef(slopem8)
+
+slopecoefm8 <- coef(slopem8)
+slopecoefm8 <- data.frame(matrix(unlist(slopecoefm8), nrow=8, byrow=FALSE),stringsAsFactors=FALSE)
+slopecoefsem8<- standard_error(slopem8, effects="random")
+slopecoefsem8 <- data.frame(matrix(unlist(slopecoefsem8), nrow=8, byrow=FALSE),stringsAsFactors=FALSE)
+
+
+m8slopes <- matrix(ncol=3, nrow=length(center))
+colnames(m8slopes) <- c("Center", "slope", "se" )
+m8slopes <- data.frame(m8slopes)
+m8slopes$Center <- center
+m8slopes$slope <-as.numeric(slopecoefm8$X2)
+m8slopes$se <- as.numeric(slopecoefsem8$X2)
+slopemam8 <- rma.uni(m8slopes$slope, sei=m8slopes$se, method="REML")
+slopemam8
+
+#intercept
+m8slopesinter <- matrix(ncol=3, nrow=length(center))
+colnames(m8slopesinter) <- c("Center", "intercept", "se" )
+m8slopesinter <- data.frame(m8slopesinter)
+m8slopesinter$Center <- center
+m8slopesinter$intercept <-as.numeric(slopecoefm8$X1)
+m8slopesinter$se <- as.numeric(slopecoefsem8$X1)
+slopeintermam8 <- rma.uni(m8slopesinter$intercept, sei=m8slopesinter$se, method="REML")
+slopeintermam8
+
+
+dataplotm8 <- data.frame(LP_m8 = seq(min(mydata$LP_m8, na.rm=T), max(mydata$LP_m8, na.rm=T), length = 500))
+
+newdatam8 <- data.frame(LP_m8 = rep(dataplotm8$LP_m8, length(IncludedCenters)), 
+                        Center = sort(rep(IncludedCenters, 500)))
+
+obsm8 <- predict(slopem8, newdata = newdatam8, re.form = ~(LP_m8 |Center), allow.new.levels = T, type = "response")
+resultm8 <- cbind.data.frame(x = inv.logit(newdatam8$LP_m8), y = obsm8,center = newdatam8$Center)
+resultm8 <- split(resultm8, resultm8$center)
+
+tiff("Binary_SVM_IECV_calibration.tiff", width = 13, height = 13, units = "cm", res = 300)
+par(mar = c(5.1,4.1,4.1,9), xpd=FALSE, pty = 's')
+plot(0, 0, xlim = c(0, 1), ylim = c(0, 1), xlab = "Estimated risk", 
+     ylab = "Observed proportion", type = "n")
+clip(0, 1, 0, 1)
+abline(0, 1, lty = 1, col = "black", lwd = 1.75)
+
+for (i in IncludedCenters) lines(resultm8[[i]], col = col.centers[which(IncludedCenters == i)], lty = lty.centers[which(IncludedCenters == i)], 
+                                 lwd = lwd.centers[which(IncludedCenters == i)])
+
+legend("topright", c("Ideal",as.character(IncludedCenters)) , lty = c(1, lty.centers), cex = 0.6,bty = "n", lwd = c(1.75, lwd.centers), 
+       col = c("black", col.centers),  inset = c(-0.7, -0.05),  xpd=NA)
+title(main="Binary SVM: Calibration per Center", line =3, cex.main=0.95)
+dev.off()
+
+#Random intercept
+interceptm8 = glmer(Outcome2 ~ 1 + (1 | Center), data = mydata, family = "binomial", 
+                    offset = LP_m8, control = glmerControl(optimizer = "bobyqa"))
+summary(interceptm8)
+coef(interceptm8)
+
+m8interc <- matrix(ncol=3, nrow=length(center))
+colnames(m8interc) <- c("Center", "intercept", "se" )
+m8interc <- data.frame(m8interc)
+m8interc$Center <- center
+
+intercm8 <- coef(interceptm8)
+intercm8 <- data.frame(unlist(intercm8), nrow=8, byrow=TRUE,stringsAsFactors=FALSE)
+
+intercm8se <- standard_error(interceptm8, effects="random")
+intercm8se <-data.frame(unlist(intercm8se), nrow=8, byrow=TRUE,stringsAsFactors=FALSE)
+
+m8interc$intercept <-as.numeric(intercm8$unlist.intercm8.)
+m8interc$se <- as.numeric(intercm8se$unlist.intercm8se.)
+
+intercmam8 <- rma.uni(m8interc$intercept, sei=m8interc$se, method="REML")
+intercmam8
+
+
+
+# 9. Neural Network
+mydata$prediction_9[mydata$prediction_9 == 0] <- 0.001
+mydata$prediction_9[mydata$prediction_9 == 1] <- 0.999
+mydata$LP_m9 <- logit(mydata$prediction_9)
+
+slopem9 <- glmer(Outcome2 ~ LP_m9 + (1+LP_m9 | Center), data = mydata, family = "binomial")
+summary(slopem9)
+coef(slopem9)
+ranef(slopem9)
+
+slopecoefm9 <- coef(slopem9)
+slopecoefm9 <- data.frame(matrix(unlist(slopecoefm9), nrow=8, byrow=FALSE),stringsAsFactors=FALSE)
+slopecoefsem9<- standard_error(slopem9, effects="random")
+slopecoefsem9 <- data.frame(matrix(unlist(slopecoefsem9), nrow=8, byrow=FALSE),stringsAsFactors=FALSE)
+
+m9slopes <- matrix(ncol=3, nrow=length(center))
+colnames(m9slopes) <- c("Center", "slope", "se" )
+m9slopes <- data.frame(m9slopes)
+m9slopes$Center <- center
+m9slopes$slope <-as.numeric(slopecoefm9$X2)
+m9slopes$se <- as.numeric(slopecoefsem9$X2)
+slopemam9 <- rma.uni(m9slopes$slope, sei=m9slopes$se, method="REML")
+slopemam9
+
+#intercept
+m9slopesinter <- matrix(ncol=3, nrow=length(center))
+colnames(m9slopesinter) <- c("Center", "intercept", "se" )
+m9slopesinter <- data.frame(m9slopesinter)
+m9slopesinter$Center <- center
+m9slopesinter$intercept <-as.numeric(slopecoefm9$X1)
+m9slopesinter$se <- as.numeric(slopecoefsem9$X1)
+slopeintermam9 <- rma.uni(m9slopesinter$intercept, sei=m9slopesinter$se, method="REML")
+slopeintermam9
+
+dataplotm9 <- data.frame(LP_m9 = seq(min(mydata$LP_m9, na.rm=T), max(mydata$LP_m9, na.rm=T), length = 500))
+
+newdatam9 <- data.frame(LP_m9 = rep(dataplotm9$LP_m9, length(IncludedCenters)), 
+                        Center = sort(rep(IncludedCenters, 500)))
+
+obsm9 <- predict(slopem9, newdata = newdatam9, re.form = ~(LP_m9 |Center), allow.new.levels = T, type = "response")
+resultm9 <- cbind.data.frame(x = inv.logit(newdatam9$LP_m9), y = obsm9,center = newdatam9$Center)
+resultm9 <- split(resultm9, resultm9$center)
+
+tiff("Binary_NN_IECV_calibration.tiff", width = 13, height = 13, units = "cm", res = 300)
+par(mar = c(5.1,4.1,4.1,9), xpd=FALSE, pty = 's')
+plot(0, 0, xlim = c(0, 1), ylim = c(0, 1), xlab = "Estimated risk", 
+     ylab = "Observed proportion", type = "n")
+clip(0, 1, 0, 1)
+abline(0, 1, lty = 1, col = "black", lwd = 1.75)
+
+for (i in IncludedCenters) lines(resultm9[[i]], col = col.centers[which(IncludedCenters == i)], lty = lty.centers[which(IncludedCenters == i)], 
+                                 lwd = lwd.centers[which(IncludedCenters == i)])
+
+legend("topright", c("Ideal",as.character(IncludedCenters)) , lty = c(1, lty.centers), cex = 0.6,bty = "n", lwd = c(1.75, lwd.centers), 
+       col = c("black", col.centers),  inset = c(-0.7, -0.05),  xpd=NA)
+title(main="Binary NN: Calibration per Center", line =3, cex.main=0.95)
+dev.off()
+
+#Random intercept
+interceptm9 = glmer(Outcome2 ~ 1 + (1 | Center), data = mydata, family = "binomial", 
+                    offset = LP_m9, control = glmerControl(optimizer = "bobyqa"))
+summary(interceptm9)
+coef(interceptm9)
+
+m9interc <- matrix(ncol=3, nrow=length(center))
+colnames(m9interc) <- c("Center", "intercept", "se" )
+m9interc <- data.frame(m9interc)
+m9interc$Center <- center
+
+intercm9 <- coef(interceptm9)
+intercm9 <- data.frame(unlist(intercm9), nrow=8, byrow=TRUE,stringsAsFactors=FALSE)
+
+intercm9se <- standard_error(interceptm9, effects="random")
+intercm9se <-data.frame(unlist(intercm9se), nrow=8, byrow=TRUE,stringsAsFactors=FALSE)
+
+m9interc$intercept <-as.numeric(intercm9$unlist.intercm9.)
+m9interc$se <- as.numeric(intercm9se$unlist.intercm9se.)
+
+intercmam9 <- rma.uni(m9interc$intercept, sei=m9interc$se, method="REML")
+intercmam9
+
+
+
+
+
+#########################################
+########### Overall Calibration #########
+#########################################
+## Predicting the outcome for the calibration curves
+# LR
+p.LR = seq(min(mydata$prediction_1), max(mydata$prediction_1), length = 500)
+X = cbind(1, logit(p.LR))
+FE = c(coef(slopeintermam1), coef(slopemam1))
+OverallCal.LR = inv.logit(X[order(p.LR), ] %*% FE)
+p.LR = p.LR[order(p.LR)]
+
+#LR with transformations  
+p.LR2 = seq(min(mydata$prediction_2), max(mydata$prediction_2), length = 500)
+X = cbind(1, logit(p.LR2))
+FE = c(coef(slopeintermam2), coef(slopemam2))
+OverallCal.LR2 = inv.logit(X[order(p.LR2), ] %*% FE)
+p.LR2 = p.LR2[order(p.LR2)]
+
+# Ridge
+p.ridge = seq(min(mydata$prediction_3), max(mydata$prediction_3), length = 500)
+X = cbind(1, logit(p.ridge))
+FE = c(coef(slopeintermam3), coef(slopemam3))
+OverallCal.ridge = inv.logit(X[order(p.ridge), ] %*% FE)
+p.ridge = p.ridge[order(p.ridge)]
+
+# Firth
+p.firth = seq(min(mydata$prediction_4), max(mydata$prediction_4), length = 500)
+X = cbind(1, logit(p.firth))
+FE = c(coef(slopeintermam4), coef(slopemam4))
+OverallCal.firth = inv.logit(X[order(p.firth), ] %*% FE)
+p.firth = p.firth[order(p.firth)]
+
+# CART
+p.ca = seq(min(mydata$prediction_5), max(mydata$prediction_5), length = 500)
+X = cbind(1, logit(p.ca))
+FE = c(coef(slopeintermam5), coef(slopemam5))
+OverallCal.ca = inv.logit(X[order(p.ca), ] %*% FE)
+p.ca = p.ca[order(p.ca)]
+
+# RF
+p.rf = seq(min(mydata$prediction_6), max(mydata$prediction_6), length = 500)
+X = cbind(1, logit(p.rf))
+FE = c(coef(slopeintermam6), coef(slopemam6))
+OverallCal.rf = inv.logit(X[order(p.rf), ] %*% FE)
+p.rf = p.rf[order(p.rf)]
+
+# XGB
+p.xg = seq(min(mydata$prediction_7), max(mydata$prediction_7), length = 500)
+X = cbind(1, logit(p.xg))
+FE = c(coef(slopeintermam7), coef(slopemam7))
+OverallCal.xg = inv.logit(X[order(p.xg), ] %*% FE)
+p.xg = p.xg[order(p.xg)]
+
+
+# SVM
+p.svm = seq(min(mydata$prediction_8), max(mydata$prediction_8), length = 500)
+X = cbind(1, logit(p.svm))
+FE = c(coef(slopeintermam8), coef(slopemam8))
+OverallCal.svm = inv.logit(X[order(p.svm), ] %*% FE)
+p.svm = p.svm[order(p.svm)]
+
+# NN
+p.nn = seq(min(mydata$prediction_9), max(mydata$prediction_9), length = 500)
+X = cbind(1, logit(p.nn))
+FE = c(coef(slopeintermam9), coef(slopemam9))
+OverallCal.nn = inv.logit(X[order(p.nn), ] %*% FE)
+p.nn = p.nn[order(p.nn)]
+
+
+table <- matrix(ncol = 3, nrow = 9)
+colnames(table) <- c('Model', 'Intercept (95% CI)', 'Slope (95% CI)')
+table[, 1] <- c('LR', 'LR w tran', 'Ridge LR',"Firth LR", "CART", "RF", "XGBoost", "SVM", "NN")
+table[1, 2:3] <- c(paste0(format(round(coef(intercmam1), 2), nsmall = 2), " (", format(round(intercmam1$ci.lb, 2), nsmall = 2), " to ", format(round(intercmam1$ci.ub, 2), nsmall = 2), ")"), paste0(format(round(coef(slopemam1), 2), nsmall = 2), " (", format(round(slopemam1$ci.lb, 2), nsmall = 2), " to ", format(round(slopemam1$ci.ub, 2), nsmall = 2), ")"))
+table[2, 2:3] <- c(paste0(format(round(coef(intercmam2), 2), nsmall = 2), " (", format(round(intercmam2$ci.lb, 2), nsmall = 2), " to ", format(round(intercmam2$ci.ub, 2), nsmall = 2), ")"), paste0(format(round(coef(slopemam2), 2), nsmall = 2), " (", format(round(slopemam2$ci.lb, 2), nsmall = 2), " to ", format(round(slopemam2$ci.ub, 2), nsmall = 2), ")"))
+table[3, 2:3] <- c(paste0(format(round(coef(intercmam3), 2), nsmall = 2), " (", format(round(intercmam3$ci.lb, 2), nsmall = 2), " to ", format(round(intercmam3$ci.ub, 2), nsmall = 2), ")"), paste0(format(round(coef(slopemam3), 2), nsmall = 2), " (", format(round(slopemam3$ci.lb, 2), nsmall = 2), " to ", format(round(slopemam3$ci.ub, 2), nsmall = 2), ")"))
+table[4, 2:3] <- c(paste0(format(round(coef(intercmam4), 2), nsmall = 2), " (", format(round(intercmam4$ci.lb, 2), nsmall = 2), " to ", format(round(intercmam4$ci.ub, 2), nsmall = 2), ")"), paste0(format(round(coef(slopemam4), 2), nsmall = 2), " (", format(round(slopemam4$ci.lb, 2), nsmall = 2), " to ", format(round(slopemam4$ci.ub, 2), nsmall = 2), ")"))
+table[5, 2:3] <- c(paste0(format(round(coef(intercmam5), 2), nsmall = 2), " (", format(round(intercmam5$ci.lb, 2), nsmall = 2), " to ", format(round(intercmam5$ci.ub, 2), nsmall = 2), ")"), paste0(format(round(coef(slopemam5), 2), nsmall = 2), " (", format(round(slopemam5$ci.lb, 2), nsmall = 2), " to ", format(round(slopemam5$ci.ub, 2), nsmall = 2), ")"))
+
+table[6, 2:3] <- c(paste0(format(round(coef(intercmam6), 2), nsmall = 2), " (", format(round(intercmam6$ci.lb, 2), nsmall = 2), " to ", format(round(intercmam6$ci.ub, 2), nsmall = 2), ")"), paste0(format(round(coef(slopemam6), 2), nsmall = 2), " (", format(round(slopemam6$ci.lb, 2), nsmall = 2), " to ", format(round(slopemam6$ci.ub, 2), nsmall = 2), ")"))
+table[7, 2:3] <- c(paste0(format(round(coef(intercmam7), 2), nsmall = 2), " (", format(round(intercmam7$ci.lb, 2), nsmall = 2), " to ", format(round(intercmam7$ci.ub, 2), nsmall = 2), ")"), paste0(format(round(coef(slopemam7), 2), nsmall = 2), " (", format(round(slopemam7$ci.lb, 2), nsmall = 2), " to ", format(round(slopemam7$ci.ub, 2), nsmall = 2), ")"))
+table[8, 2:3] <- c(paste0(format(round(coef(intercmam8), 2), nsmall = 2), " (", format(round(intercmam8$ci.lb, 2), nsmall = 2), " to ", format(round(intercmam8$ci.ub, 2), nsmall = 2), ")"), paste0(format(round(coef(slopemam8), 2), nsmall = 2), " (", format(round(slopemam8$ci.lb, 2), nsmall = 2), " to ", format(round(slopemam8$ci.ub, 2), nsmall = 2), ")"))
+table[9, 2:3] <- c(paste0(format(round(coef(intercmam9), 2), nsmall = 2), " (", format(round(intercmam9$ci.lb, 2), nsmall = 2), " to ", format(round(intercmam9$ci.ub, 2), nsmall = 2), ")"), paste0(format(round(coef(slopemam9), 2), nsmall = 2), " (", format(round(slopemam9$ci.lb, 2), nsmall = 2), " to ", format(round(slopemam9$ci.ub, 2), nsmall = 2), ")"))
+
+## put all in graph
+x = seq(0, 1, by = 0.05)
+y = seq(0, 1, by = 0.05)
+tiff("Binary Overall Calibration.tiff", width = 14, height = 14, units = "cm", res = 300)
+plot(x, y, xlim = c(0,1), ylim = c(0,1), type = "l", col = "gray50", lwd = 1, lty = 1, 
+     xlab = "Estimated risk", ylab = "Observed proportion",
+     main = "Binary Overall Calibration", cex.lab = 1, cex.axis = 1, las = 1) 
+lines(p.LR, OverallCal.LR, lwd = 2,lty=4 ,col = "#e6194b")
+lines(p.LR2, OverallCal.LR2, lwd = 2,lty=4, col = "#3cb44b")
+lines(p.ridge, OverallCal.ridge, lwd = 1, lty=1, col = "#4363d8")
+lines(p.firth, OverallCal.firth, lwd=2, lty=1, col="#f58231")
+lines(p.ca, OverallCal.ca, lwd=1, lty=1, col="#911eb4")
+lines(p.rf, OverallCal.rf, lwd=2,lty=1,  col="#f032e6")
+lines(p.xg, OverallCal.xg, lwd=1, lty=1, col="#80CDC1")
+lines(p.nn, OverallCal.svm, lwd=2, lty=1, col="#01665E")
+lines(p.svm, OverallCal.nn, lwd=1,lty=1, col="#FDE725FF")
+legend(x = -0.035, y = 1, legend = c( "Ideal", "LR", "LR w tran", "Ridge LR", "Firth LR", "CART", "RF", "XGBoost", "SVM", "NN"),
+       col = c("gray50", "#e6194b", "#3cb44b", "#4363d8","#f58231", "#911eb4", "#f032e6", "#80CDC1", "#01665E", "#FDE725FF"),
+       lty = c(1,4,4,1,1,1,1,1,1,1,1), lwd = c(1,2,2,1,2,1,2,1,2,1), cex = 0.7, bty = "n", ncol = 1)
+addtable2plot(x = 0.40, y = -0.02, table = table, display.colnames= TRUE, cex = 0.60) 
+dev.off()  
+
+
+# Violinplot of predicted risks
+tiff("Binary Predicted Risk.tiff", width = 24, height = 14, units = "cm", res = 300)
+vioplot(mydata$prediction_1, mydata$prediction_2, mydata$prediction_3, mydata$prediction_4,mydata$prediction_5,mydata$prediction_6,mydata$prediction_7,mydata$prediction_8,mydata$prediction_9, names=c('LR', 'LR w tran', 'Ridge LR',"Firth LR", "CART", "RF", "XGBoost", "SVM", "NN"))
+title("Violin Plots of predicted risks for EP")
+dev.off()  
+
+
+
+
+
+
+
+
+
