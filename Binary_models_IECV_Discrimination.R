@@ -1,3 +1,90 @@
+################################
+######## Load Packages #########
+################################
+
+library(lme4)
+library(glmnet)
+library(brglm2)
+library(randomForest)
+library(caret)
+library(nnet)
+library(rpart)
+library(rattle)
+library(xgboost)
+library(kernlab)
+library(dplyr)
+library(auRoc)
+library(car)
+library(metafor)
+library(boot)
+library(forestplot)
+library(tiff)
+library(parameters)
+library(plotrix)
+library(readxl)
+library(dplyr)
+library(car)
+library(data.table)
+library(knitr)
+library(fastDummies)
+library(ranger)
+library(jtools)
+library(ggstance)
+library(broom.mixed)
+library(mice)
+library(glmnetUtils)
+library(parameters)
+library(plyr)
+library(rema)
+
+###############
+###IMPORTANT###
+###############
+# The functions used in this analysis to obtain AUC scores are taken from:
+# https://github.com/benvancalster/IOTA5modelvalidation2020/blob/769c160a8377dd8fcc7df0027f16bab4ba14d089/Functions%20IOTA5.R
+# credits to Jolien Ceusters.
+
+
+################################
+####### Data Preparation #######
+################################
+
+getwd()
+setwd("")
+mydata =  read.delim("")
+
+# Only use 10 imputations
+mydata<-mydata%>%
+  filter(.imp %in% 1:10)
+
+# Remove Age below 16 and unnecessary columns
+mydata<- mydata %>% 
+  filter(Age>=16) %>%
+  select(-LFU,-Type.of.PUL, -ET..initial.US.)
+
+# Group FPUL and IUP together
+mydata['Outcome2'] =  ifelse(mydata$Outcome3=='EP', 1,0)
+
+# Check classes
+sapply(mydata, class)
+
+# Factor categorical data
+factors <- c("Outcome2", "Outcome3", "Centre")
+for (i in factors) {
+  mydata[, i] <- factor(mydata[, i])
+}
+
+# Build transformations
+mydata['Painscore2'] =  ifelse(mydata$Painscore==0, 0,1)
+mydata['lhCGratio_log.prog0num']= mydata$lhCGratio*mydata$log.prog0num
+
+# Standardize 
+mydata$Agesd <- scale(mydata$Age, center=TRUE, scale=TRUE)
+mydata$hCG0numsd <- scale(mydata$hCG0num, center=TRUE, scale=TRUE)
+mydata$prog0numsd <- scale(mydata$prog0num, center=TRUE, scale=TRUE)
+mydata$hCGratiosd <- scale(mydata$hCGratio, center=TRUE, scale=TRUE) 
+mydata$Painscoresd <- scale(mydata$Painscore, center=TRUE, scale=TRUE) 
+
 
 ##########################
 ########## IECV ##########
@@ -5,7 +92,7 @@
 set.seed(123)
 center_names<-c("Chelsea and Westminster", "Hillingdon", "North Middlesex", "Queen Charlotte's and Chelsea", "Royal Surrey", "St. Marys", "West Middlesex", "Wexham Park")
 
-######## Logistic Regression without transformations ###################
+########### Logistic Regression without transformations ###################
 prediction_matrix <- matrix(nrow = 0, ncol = 10) 
 mydata$Centre_numeric<-as.numeric(mydata$Centre)
 for (j in 1:10){
