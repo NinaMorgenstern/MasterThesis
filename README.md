@@ -1,5 +1,5 @@
 # MasterThesis
-Developing, Validating and Comparing Prediction Models for Pregnancies of Unknown Location
+## Developing, Validating and Comparing Prediction Models for Pregnancies of Unknown Location
 The analysis focuses on developing risk prediction models for Pregnancies of Unknown location to detect potentially dangerous ectopic pregnancies. 
 The goal of developing such risk prediction models is to provide useful decision support tools for implementation in clinical practice.
 The dataset includes missing values and has been imputed several times (multiply imputed data). 
